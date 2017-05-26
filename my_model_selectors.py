@@ -67,17 +67,43 @@ class SelectorBIC(ModelSelector):
     http://www2.imm.dtu.dk/courses/02433/doc/ch6_slides.pdf
     Bayesian information criteria: BIC = -2 * logL + p * logN
     """
-
     def select(self):
         """ select the best model for self.this_word based on
         BIC score for n between self.min_n_components and self.max_n_components
-
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        this_word = self.this_word
+        sequences = self.sequences
+
+        hmm_models = {}
+        best_score = math.inf
+        best_i = None
+
+        for i in range(self.min_n_components, self.max_n_components):
+            try:
+                model = GaussianHMM(n_components=i, covariance_type="diag",
+                                    n_iter=1000,
+                                    random_state=self.random_state,
+                                    verbose=False).fit(self.X, self.lengths)
+                hmm_models[i] = model
+                logL = model.score(self.X, self.lengths)
+
+                num_of_parameters = i * i + 2 * i * len(self.X[0]) - 1
+
+                logN = np.log(len(self.lengths))
+                # calculate BIC score from the formula given above
+                bic = -2 * logL + num_of_parameters * logN
+                if best_score is None or best_score > bic:
+                    best_score = bic
+                    best_i = i
+            except ValueError:
+                hmm_models[i] = None
+
+        if best_i is None:
+            return None
+        return hmm_models[best_i]
 
 
 class SelectorDIC(ModelSelector):
@@ -88,12 +114,53 @@ class SelectorDIC(ModelSelector):
     http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.58.6208&rep=rep1&type=pdf
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
-
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        this_word = self.this_word
+        sequences = self.sequences
+
+        hmm_models = {}
+        best_score = None
+        best_i = None
+
+        for i in range(self.min_n_components, self.max_n_components):
+            try:
+                model = GaussianHMM(n_components=i, covariance_type="diag",
+                                    n_iter=1000,
+                                    random_state=self.random_state,
+                                    verbose=False).fit(self.X, self.lengths)
+                hmm_models[i] = model
+                logL = model.score(self.X, self.lengths)
+
+                sum_logL = 0
+                num_of_logs = 0
+
+                for word in self.hwords.keys():
+                    if word == this_word:
+                        continue
+
+                    try:
+                        X2, lengths2 = self.hwords[word]
+                        logL = model.score(X2, lengths2) / len(lengths2)
+                        sum_logL += logL
+                        num_of_logs += 1
+                    except:
+                        pass
+
+                dic = logL
+                if num_of_logs:
+                    dic -= sum_logL / num_of_logs
+
+                if best_score is None or best_score < dic:
+                    best_score = dic
+                    best_i = i
+            except ValueError:
+                hmm_models[i] = None
+
+        if best_i is None:
+            return None
+        return hmm_models[best_i]
 
 
 class SelectorCV(ModelSelector):
@@ -107,9 +174,6 @@ class SelectorCV(ModelSelector):
         sequences = self.sequences
 
         if len(self.lengths) < 2:
-            if self.verbose:
-                print("not enough sequences to train this word = {}"
-                      .format(this_word))
             return None
 
         hmm_models = {}
@@ -149,38 +213,18 @@ class SelectorCV(ModelSelector):
                         best_score = logL
                         best_model = model
 
-                    if self.verbose:
-                        print("model created : word = {}, number of states = {},  fold = {}, \
-                              score = {}".format(this_word, i, fold, logL))
                 except ValueError:
-                    if self.verbose:
-                        print("model failed to create : word = {}, \
-                               number of states = {}, score = {}"
-                              .format(this_word, i, fold))
+                    pass
 
             if num_of_models == 0:
-                if self.verbose:
-                    print("no models generated for {} with {} states"
-                          .format(this_word, i))
                 continue
 
             hmm_models[i] = best_model
-            # now average the scores for all the folds of this n
             avg_logL = sum_logL / num_of_models
-            if self.verbose:
-                print("best score for word = {} with num of states = {}, \
-                      score = {}".format(this_word, i, best_score))
-
-                print("average score for word = {} with num of states = {}, \
-                      average score = {}".format(this_word, i, avg_logL))
 
             if best_score_overall is None or best_score_overall < avg_logL:
                 best_score_overall = avg_logL
                 best_i = i
-
-        if self.verbose:
-            print("best model for {}, number of states = {}"
-                  .format(this_word, best_i))
 
         if best_i is None:
             return None
