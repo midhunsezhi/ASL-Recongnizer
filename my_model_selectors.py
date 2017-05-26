@@ -106,7 +106,7 @@ class SelectorCV(ModelSelector):
         this_word = self.this_word
         sequences = self.sequences
 
-        if len(self.lengths) <= 1:
+        if len(self.lengths) < 2:
             if self.verbose:
                 print("not enough sequences to train this word = {}"
                       .format(this_word))
@@ -129,16 +129,15 @@ class SelectorCV(ModelSelector):
             fold = 0
             kf = KFold(n_splits=min(3, len(self.lengths)))
 
-            for cv_train_idx, cv_test_idx in
-            kf.split(sequences):
+            for cv_train_idx, cv_test_idx in kf.split(sequences):
 
                 fold += 1
 
-                X, lengths = combine_sequences(cv_train_idx, word_sequences)
-                X2, lengths2 = combine_sequences(cv_test_idx, word_sequences)
+                X, lengths = combine_sequences(cv_train_idx, sequences)
+                X2, lengths2 = combine_sequences(cv_test_idx, sequences)
 
                 try:
-                    model = GaussianHMM(n_components=n, covariance_type="diag",
+                    model = GaussianHMM(n_components=i, covariance_type="diag",
                                         n_iter=1000,
                                         random_state=self.random_state,
                                         verbose=False).fit(X, lengths)
